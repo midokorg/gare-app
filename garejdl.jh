@@ -1,0 +1,252 @@
+application {
+  config {
+    baseName gare,
+    applicationType monolith,
+    authenticationType jwt,
+    prodDatabaseType postgresql,
+    devDatabaseType postgresql,
+    buildTool maven,
+    clientFramework angular,
+    clientPackageManager npm,
+    skipUserManagement true
+  }
+  entities *
+}
+
+dto * with mapstruct
+service * with serviceClass
+
+// Pagination for heavy lists
+paginate Line, Trip, Ticket, Operator, Bus, Driver with pagination
+
+enum TripStatus {
+  SCHEDULED, BOARDING, DEPARTED, ARRIVED, CANCELLED, LATE
+}
+
+enum TicketStatus {
+  CONFIRMED, CANCELLED, REFUNDED, BOARDED, PRINTED
+}
+
+enum PaymentStatus {
+  PENDING, SUCCESS, FAILED
+}
+
+enum DepositStatus {
+  PENDING, VALIDATED, REJECTED
+}
+
+enum SettlementStatus {
+  DRAFT, VALIDATED, PAID, DISPUTE
+}
+
+/*
+ Entities
+*/
+
+entity Line {
+  code String required minlength(1) maxlength(20),
+  name String required maxlength(200),
+  description String,
+  defaultCapacity Integer required min(1),
+  active Boolean required
+}
+
+entity Station {
+  code String maxlength(20),
+  name String required maxlength(200),
+  city String,
+  address String,
+  lat BigDecimal,
+  lon BigDecimal
+}
+
+entity Trip {
+  tripDate LocalDate required,
+  scheduledDeparture ZonedDateTime required,
+  scheduledArrival ZonedDateTime,
+  status TripStatus required,
+  capacityOverride Integer,
+  createdAt Instant,
+  updatedAt Instant
+}
+
+entity TripStop {
+  stopOrder Integer required,
+  scheduledTime ZonedDateTime required,
+  estimatedTime ZonedDateTime,
+  priceFromPrev BigDecimal required
+}
+
+entity Bus {
+  plateNumber String required maxlength(20),
+  capacity Integer required min(1),
+  model String,
+  status String
+}
+
+entity Driver {
+  firstName String required,
+  lastName String required,
+  phone String,
+  licenseNumber String,
+  status String
+}
+
+entity Operator {
+  name String required,
+  contactEmail String,
+  phone String,
+  active Boolean
+}
+
+entity Ticket {
+  price BigDecimal required,
+  passengerName String,
+  passengerId String,
+  paymentMethod String required,
+  status TicketStatus required,
+  createdAt Instant,
+  printedAt Instant,
+  qrCodeUrl String
+}
+
+entity TicketPayment {
+  amount BigDecimal required,
+  method String required,
+  transactionRef String,
+  status PaymentStatus required,
+  idempotencyKey String
+}
+
+entity AnprEvent {
+  plate String required,
+  cameraId String,
+  imageUrl String,
+  timestamp ZonedDateTime required,
+  confidence BigDecimal,
+  rawPayload String,
+  processed Boolean
+}
+
+entity TripDisplayStatus {
+  stationId Long required,
+  plannedTime ZonedDateTime required,
+  actualTime ZonedDateTime,
+  bay String,
+  status TripStatus required,
+  message String,
+  lastUpdate Instant
+}
+
+entity GuichetDeposit {
+  date LocalDate required,
+  expectedAmount BigDecimal required,
+  actualAmount BigDecimal required,
+  difference BigDecimal,
+  comment String,
+  receiptUrl String,
+  status DepositStatus required,
+  createdAt Instant
+}
+
+entity OperatorSettlement {
+  periodStart LocalDate required,
+  periodEnd LocalDate required,
+  grossAmount BigDecimal required,
+  feesTotal BigDecimal,
+  taxes BigDecimal,
+  netAmount BigDecimal,
+  status SettlementStatus required,
+  approvedBy String,
+  approvedAt Instant
+}
+
+/*
+ RBAC + User entity updated for reset-password flow
+ Note: skipUserManagement true => JHipster built-in register/activate flows skipped.
+ Admin will create users through /api/admin/users.
+*/
+
+entity User {
+  username String required,
+  email String required,
+  passwordHash String required,
+  mustChangePassword Boolean required,
+  resetToken String,
+  resetTokenExpiry Instant,
+  status String,
+  lastLogin Instant
+}
+
+entity Role {
+  code String required,
+  name String required,
+  description String
+}
+
+entity Permission {
+  code String required,
+  description String
+}
+
+entity AuditLog {
+  entity String required,
+  entityId Long,
+  action String required,
+  data String,
+  createdAt Instant
+}
+
+/*
+ Relationships
+*/
+
+relationship OneToMany {
+  Line{trips} to Trip{line},
+  Trip{stops} to TripStop{trip}
+}
+
+relationship ManyToOne {
+  Trip{operator} to Operator,
+  Trip{bus} to Bus,
+  Trip{driver} to Driver,
+  TripStop{station} to Station,
+  Bus{operator} to Operator,
+  Ticket{trip} to Trip,
+  TicketPayment{ticket} to Ticket,
+  AnprEvent{matchedBus} to Bus,
+  TripDisplayStatus{trip} to Trip,
+  GuichetDeposit{user} to User,
+  OperatorSettlement{operator} to Operator
+}
+
+relationship OneToOne {
+  Ticket{payment} to TicketPayment{ticket}
+}
+
+/* Ticket origin/destination mapping to two TripStop relations */
+relationship ManyToOne {
+  Ticket{originStop} to TripStop,
+  Ticket{destStop} to TripStop
+}
+
+/* RBAC links */
+relationship ManyToMany {
+  User{roles} to Role{users},
+  Role{permissions} to Permission{roles}
+}
+
+/*
+ Additional backend notes (not parsed by JHipster but for devs)
+ - Implement TicketService transactional logic: segment-by-segment capacity check (origin_order ≤ stop < dest_order)
+ - Implement AnprEvent webhook verification & matching rules
+ - Implement async PDF generation pipeline for tickets & deposits
+ - Implement mail service for reset tokens
+*/
+
+/*
+ Generation hints:
+ - DTOs generated with MapStruct
+ - Service classes generated for business logic
+ - Add Flyway migrations after entity generation to tune indexes/constraints as in doc technique
+*/
