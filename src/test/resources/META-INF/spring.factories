@@ -1,0 +1,4 @@
+org.springframework.test.context.ContextCustomizerFactory = \
+    com.gare.app.config.SqlTestContainersSpringContextCustomizerFactory,com.\
+    gare.app.config.TestContainersSpringContextCustomizerFactory,com.gare.app.\
+    config.KafkaTestContainersSpringContextCustomizerFactory
